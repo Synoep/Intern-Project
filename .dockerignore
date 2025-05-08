@@ -1,0 +1,52 @@
+# Version control
+.git
+.github
+.gitignore
+
+# Node.js
+node_modules
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Build artifacts
+dist
+build
+coverage
+.coverage
+.nyc_output
+
+# Environment and configuration
+.env
+.env.*
+!.env.example
+
+# Documentation
+README.md
+CHANGELOG.md
+docs
+
+# Development tools
+.vscode
+.idea
+*.sublime-*
+
+# Test files
+**/*.test.js
+**/*.spec.js
+test
+tests
+__tests__
+__mocks__
+
+# Temporary files
+.tmp
+.temp
+.cache
+*.log
+*.bak
+*.swp
+
+# OS specific
+.DS_Store
+Thumbs.db

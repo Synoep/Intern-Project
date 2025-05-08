@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-production
+  namespace: production
+  labels:
+    app: webapp
+    environment: production
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: webapp
+      environment: production
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: webapp
+        environment: production
+    spec:
+      containers:
+      - name: webapp
+        image: ghcr.io/your-org/your-repo:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+          requests:
+            cpu: "0.5"
+            memory: "512Mi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: webapp-config
+              key: api-url
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: webapp-secrets
+              key: api-key
+      imagePullSecrets:
+      - name: github-container-registry
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-production
+  namespace: production
+spec:
+  selector:
+    app: webapp
+    environment: production
+  ports:
+  - port: 80
+    targetPort: 80
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webapp-config
+  namespace: production
+data:
+  api-url: "https://api.example.com"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: webapp-production-hpa
+  namespace: production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: webapp-production
+  minReplicas: 4
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 75

@@ -1,0 +1,79 @@
+name: CD Staging Pipeline
+
+on:
+  push:
+    branches: [ develop ]
+  workflow_dispatch:
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to staging
+        run: |
+          # Set the image tag to the commit SHA
+          export IMAGE_TAG=$(echo $GITHUB_SHA | cut -c1-7)
+          
+          # Update the deployment manifest with the new image tag
+          sed -i "s|image: ghcr.io/${{ github.repository }}:.*|image: ghcr.io/${{ github.repository }}:$IMAGE_TAG|g" k8s/staging/deployment.yaml
+          
+          # Apply the Kubernetes manifests
+          kubectl apply -f k8s/staging/
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/webapp-staging -n staging
+          echo "Deployment to staging completed successfully"
+
+      - name: Run smoke tests
+        run: |
+          # Wait for the service to be fully available
+          sleep 30
+          
+          # Get the service URL
+          STAGING_URL=$(kubectl get service webapp-staging -n staging -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          
+          # Run smoke tests against the deployed service
+          ./scripts/smoke-tests.sh https://$STAGING_URL
+        
+      - name: Notify team on success
+        if: success()
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ github.event.number }}
+          body: |
+            ✅ Deployment to staging environment succeeded!
+            
+            You can access the staging environment at: https://staging.example.com
+            
+            Deployed commit: ${{ github.sha }}
+
+      - name: Notify team on failure
+        if: failure()
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ github.event.number }}
+          body: |
+            ❌ Deployment to staging environment failed!
+            
+            Please check the [workflow logs](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}) for more details.

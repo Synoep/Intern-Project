@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-staging
+  namespace: staging
+  labels:
+    app: webapp
+    environment: staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: webapp
+      environment: staging
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: webapp
+        environment: staging
+    spec:
+      containers:
+      - name: webapp
+        image: ghcr.io/your-org/your-repo:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: "0.5"
+            memory: "512Mi"
+          requests:
+            cpu: "0.2"
+            memory: "256Mi"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        env:
+        - name: NODE_ENV
+          value: "staging"
+        - name: API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: webapp-config
+              key: api-url
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: webapp-secrets
+              key: api-key
+      imagePullSecrets:
+      - name: github-container-registry
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-staging
+  namespace: staging
+spec:
+  selector:
+    app: webapp
+    environment: staging
+  ports:
+  - port: 80
+    targetPort: 80
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webapp-config
+  namespace: staging
+data:
+  api-url: "https://api.staging.example.com"

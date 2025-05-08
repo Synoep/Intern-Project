@@ -1,0 +1,88 @@
+name: CD Production Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Confirm deployment to production'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+
+jobs:
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.confirmation == 'yes' || github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to production
+        run: |
+          # Set the image tag to the commit SHA
+          export IMAGE_TAG=$(echo $GITHUB_SHA | cut -c1-7)
+          
+          # Update the deployment manifest with the new image tag
+          sed -i "s|image: ghcr.io/${{ github.repository }}:.*|image: ghcr.io/${{ github.repository }}:$IMAGE_TAG|g" k8s/production/deployment.yaml
+          
+          # Apply the Kubernetes manifests with a canary strategy
+          kubectl apply -f k8s/production/
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/webapp-production -n production
+          echo "Deployment to production completed successfully"
+
+      - name: Monitor deployment health
+        run: |
+          # Wait for the service to be fully available
+          sleep 30
+          
+          # Get the service URL
+          PROD_URL=$(kubectl get service webapp-production -n production -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          
+          # Monitor service health for 5 minutes
+          ./scripts/monitor-deployment.sh https://$PROD_URL 300
+        
+      - name: Notify team on success
+        if: success()
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: ${{ github.event.number }}
+          body: |
+            ✅ Deployment to production environment succeeded!
+            
+            You can access the production environment at: https://example.com
+            
+            Deployed commit: ${{ github.sha }}
+
+      - name: Notify team on failure and rollback
+        if: failure()
+        run: |
+          echo "Deployment failed, initiating rollback..."
+          kubectl rollout undo deployment/webapp-production -n production
+          
+          echo "Notifying team of failure and rollback..."
+          # Send notification to Slack, email, etc.

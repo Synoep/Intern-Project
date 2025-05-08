@@ -1,0 +1,41 @@
+version: 2
+updates:
+  # Maintain dependencies for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  # Maintain dependencies for npm
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "npm"
+    versioning-strategy: increase
+    ignore:
+      # Ignore major updates for these packages
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      development-dependencies:
+        dependency-type: "development"
+      production-dependencies:
+        dependency-type: "production"
+
+  # Maintain dependencies for Docker
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
